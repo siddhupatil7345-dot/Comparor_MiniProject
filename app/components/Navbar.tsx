@@ -11,7 +11,7 @@ const navItems = [
   { name: "CSV Splitter", href: "/csv-splitter" },
   { name: "Text Columnizer", href: "/text-columnizer" },
   { name: "Column Extractor", href: "/column-extractor" },
-  { name: "VLookup Online", href: "/vlookup-online" },
+  { name: "Json Diff", href: "/tools/json-diff" },
   { name: "Others", href: "/others" },
 ];
 
