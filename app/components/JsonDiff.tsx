@@ -407,7 +407,7 @@ const JSONDiff = () => {
 
           {showResults && diffs.length > 0 && (
             <div className="mt-8">
-              <div className="bg-white rounded-xl shadow-lg p-6 border-2 border-green-200">
+              <div className="bg-white text-black rounded-xl shadow-lg p-6 border-2 border-green-200">
                 <h3 className="text-2xl font-bold text-gray-800 mb-4">
                   <span className="text-green-600">{diffs.length}</span> Difference{diffs.length !== 1 ? 's' : ''} Found
                 </h3>
