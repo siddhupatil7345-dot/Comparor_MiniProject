@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { AlertCircle, FileJson, RotateCcw, Edit3, Lock } from 'lucide-react';
 
 interface Difference {
@@ -18,6 +18,11 @@ const JSONDiff = () => {
   const [isComparing, setIsComparing] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
+  
+  const leftTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const rightTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const leftOverlayRef = useRef<HTMLDivElement>(null);
+  const rightOverlayRef = useRef<HTMLDivElement>(null);
 
   const sampleData = {
     left: JSON.stringify({
@@ -43,6 +48,29 @@ const JSONDiff = () => {
       "hobbies": ["reading", "coding", "traveling"]
     }, null, 2)
   };
+
+  // Sync scroll between textarea and overlay
+  useEffect(() => {
+    const syncScroll = (textarea: HTMLTextAreaElement | null, overlay: HTMLDivElement | null) => {
+      if (!textarea || !overlay) return;
+      
+      const handleScroll = () => {
+        overlay.scrollTop = textarea.scrollTop;
+        overlay.scrollLeft = textarea.scrollLeft;
+      };
+      
+      textarea.addEventListener('scroll', handleScroll);
+      return () => textarea.removeEventListener('scroll', handleScroll);
+    };
+
+    const cleanup1 = syncScroll(leftTextareaRef.current, leftOverlayRef.current);
+    const cleanup2 = syncScroll(rightTextareaRef.current, rightOverlayRef.current);
+
+    return () => {
+      cleanup1?.();
+      cleanup2?.();
+    };
+  }, [isLocked]);
 
   const validateJSON = (text: string): { valid: boolean; error: string } => {
     try {
@@ -241,42 +269,68 @@ const JSONDiff = () => {
     }
   };
 
-  const getHighlightedLines = (): Set<number> => {
-    if (!showResults || !isLocked || !rightJson) return new Set();
+  const findLineRangeForPath = (jsonStr: string, path: string): Set<number> => {
+    const lines = jsonStr.split('\n');
+    const lineNumbers = new Set<number>();
     
-    const highlightedLines = new Set<number>();
-    const lines = rightJson.split('\n');
-    
-    diffs.forEach(diff => {
-      const rightValueStr = JSON.stringify(diff.rightValue);
+    try {
+      // Parse path into parts
+      const pathParts = path.split(/\.|\[/).map(p => p.replace(/\]/g, ''));
+      
+      // For simple value changes, find the key line
+      const lastKey = pathParts[pathParts.length - 1];
       
       lines.forEach((line, index) => {
-        // Check if this line contains the changed value
-        if (rightValueStr && line.includes(rightValueStr)) {
-          highlightedLines.add(index);
+        // Check if line contains the key we're looking for
+        const trimmedLine = line.trim();
+        if (trimmedLine.startsWith(`"${lastKey}":`)) {
+          lineNumbers.add(index);
         }
       });
+      
+      return lineNumbers;
+    } catch {
+      return lineNumbers;
+    }
+  };
+
+  const getHighlightedLines = (side: 'left' | 'right', jsonStr: string): Set<number> => {
+    const highlightedLines = new Set<number>();
+    
+    if (!showResults || !isLocked || !jsonStr) {
+      return highlightedLines;
+    }
+    
+    diffs.forEach(diff => {
+      const lineNums = findLineRangeForPath(jsonStr, diff.path);
+      lineNums.forEach(num => highlightedLines.add(num));
     });
     
     return highlightedLines;
   };
 
-  const renderHighlightedJSON = () => {
-    if (!rightJson || !showResults || !isLocked) return null;
-
-    const lines = rightJson.split('\n');
-    const highlightedLines = getHighlightedLines();
+  const renderHighlightedJSON = (text: string, side: 'left' | 'right', ref: React.RefObject<HTMLDivElement>) => {
+    if (!showResults || !isLocked || !text) return null;
     
-    // setRightJson('');
+    const highlightedLines = getHighlightedLines(side, text);
+    const lines = text.split('\n');
+    
     return (
-      <div className="absolute inset-0 pointer-events-none font-mono text-sm leading-6 whitespace-pre overflow-hidden">
-        {lines.map((line, index) => {
-          const isHighlighted = highlightedLines.has(index);
-          const bgColor = isHighlighted ? 'bg-yellow-200' : '';
-
+      <div 
+        ref={ref}
+        className="absolute inset-0 p-3 font-mono text-sm pointer-events-none overflow-hidden" 
+        style={{ lineHeight: '1.5rem' }}
+      >
+        {lines.map((line, lineIndex) => {
+          const shouldHighlight = highlightedLines.has(lineIndex);
+          
           return (
-            <div key={index} className={`${bgColor} px-4 leading-6`}>
-              {line || '\u00A0'}
+            <div key={lineIndex} style={{ lineHeight: '1.5rem' }}>
+              {shouldHighlight ? (
+                <span className="bg-yellow-300 text-black px-0.5 rounded">{line || '\u00A0'}</span>
+              ) : (
+                <span className="text-gray-700">{line || '\u00A0'}</span>
+              )}
             </div>
           );
         })}
@@ -388,16 +442,20 @@ const JSONDiff = () => {
               </div>
             </div>
 
-            <textarea
-              value={leftJson}
-              onChange={(e) => setLeftJson(e.target.value)}
-              placeholder='Enter your JSON here or upload a file...'
-              disabled={isLocked}
-              className={`w-full h-96 p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm text-black placeholder-gray-400 bg-white shadow-sm transition-all duration-200 hover:shadow-md font-mono ${
-                isLocked ? 'cursor-not-allowed opacity-90' : ''
-              }`}
-              style={{ lineHeight: '1.5rem' }}
-            />
+            <div className="relative">
+              {isLocked && renderHighlightedJSON(leftJson, 'left', leftOverlayRef)}
+              <textarea
+                ref={leftTextareaRef}
+                value={leftJson}
+                onChange={(e) => setLeftJson(e.target.value)}
+                placeholder='Enter your JSON here or upload a file...'
+                readOnly={isLocked}
+                className={`w-full h-96 p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm placeholder-gray-400 shadow-sm transition-all duration-200 hover:shadow-md font-mono relative z-10 ${
+                  isLocked ? 'bg-transparent text-transparent caret-transparent selection:bg-transparent' : 'bg-white text-black'
+                }`}
+                style={{ lineHeight: '1.5rem' }}
+              />
+            </div>
             {leftError && (
               <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -453,14 +511,15 @@ const JSONDiff = () => {
             </div>
 
             <div className="relative">
-              {renderHighlightedJSON()}
+              {isLocked && renderHighlightedJSON(rightJson, 'right', rightOverlayRef)}
               <textarea
+                ref={rightTextareaRef}
                 value={rightJson}
                 onChange={(e) => setRightJson(e.target.value)}
                 placeholder='Enter your JSON here or upload a file...'
-                disabled={isLocked}
-                className={`w-full h-96 p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm text-black placeholder-gray-400 shadow-sm transition-all duration-200 hover:shadow-md font-mono relative z-10 ${
-                  isLocked ? 'cursor-not-allowed opacity-90 bg-transparent' : 'bg-white'
+                readOnly={isLocked}
+                className={`w-full h-96 p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm placeholder-gray-400 shadow-sm transition-all duration-200 hover:shadow-md font-mono relative z-10 ${
+                  isLocked ? 'bg-transparent text-transparent caret-transparent selection:bg-transparent' : 'bg-white text-black'
                 }`}
                 style={{ lineHeight: '1.5rem' }}
               />
