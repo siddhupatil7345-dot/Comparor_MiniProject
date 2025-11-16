@@ -309,7 +309,7 @@ const JSONDiff = () => {
     return highlightedLines;
   };
 
-  const renderHighlightedJSON = (text: string, side: 'left' | 'right', ref: React.RefObject<HTMLDivElement>) => {
+  const renderHighlightedJSON = (text: string, side: 'left' | 'right', ref: React.RefObject<HTMLDivElement | null>) => {
     if (!showResults || !isLocked || !text) return null;
     
     const highlightedLines = getHighlightedLines(side, text);
