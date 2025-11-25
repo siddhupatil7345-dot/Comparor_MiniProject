@@ -269,50 +269,33 @@ const JSONDiff = () => {
     }
   };
 
-  const findLineRangeForPath = (jsonStr: string, path: string): Set<number> => {
-    const lines = jsonStr.split('\n');
-    const lineNumbers = new Set<number>();
-    
-    try {
-      // Parse path into parts
-      const pathParts = path.split(/\.|\[/).map(p => p.replace(/\]/g, ''));
-      
-      // For simple value changes, find the key line
-      const lastKey = pathParts[pathParts.length - 1];
-      
-      lines.forEach((line, index) => {
-        // Check if line contains the key we're looking for
-        const trimmedLine = line.trim();
-        if (trimmedLine.startsWith(`"${lastKey}":`)) {
-          lineNumbers.add(index);
-        }
-      });
-      
-      return lineNumbers;
-    } catch {
-      return lineNumbers;
-    }
-  };
-
-  const getHighlightedLines = (side: 'left' | 'right', jsonStr: string): Set<number> => {
-    const highlightedLines = new Set<number>();
-    
-    if (!showResults || !isLocked || !jsonStr) {
-      return highlightedLines;
-    }
+  const getChangedValuesForSide = (side: 'left' | 'right'): string[] => {
+    const values: string[] = [];
     
     diffs.forEach(diff => {
-      const lineNums = findLineRangeForPath(jsonStr, diff.path);
-      lineNums.forEach(num => highlightedLines.add(num));
+      const value = side === 'left' ? diff.leftValue : diff.rightValue;
+      
+      if (value !== undefined && value !== null) {
+        // Convert value to how it appears in JSON
+        if (typeof value === 'string') {
+          values.push(`"${value}"`);
+        } else if (typeof value === 'number' || typeof value === 'boolean') {
+          values.push(String(value));
+        } else if (typeof value === 'object') {
+          values.push(JSON.stringify(value));
+        }
+      }
     });
     
-    return highlightedLines;
+    return values;
   };
 
   const renderHighlightedJSON = (text: string, side: 'left' | 'right', ref: React.RefObject<HTMLDivElement | null>) => {
     if (!showResults || !isLocked || !text) return null;
     
-    const highlightedLines = getHighlightedLines(side, text);
+    const changedValues = getChangedValuesForSide(side);
+    if (changedValues.length === 0) return null;
+    
     const lines = text.split('\n');
     
     return (
@@ -322,12 +305,60 @@ const JSONDiff = () => {
         style={{ lineHeight: '1.5rem' }}
       >
         {lines.map((line, lineIndex) => {
-          const shouldHighlight = highlightedLines.has(lineIndex);
+          // Check if this line contains any changed value
+          let hasChange = false;
+          let highlightedLine = line;
+          
+          changedValues.forEach(value => {
+            if (line.includes(value)) {
+              hasChange = true;
+            }
+          });
           
           return (
             <div key={lineIndex} style={{ lineHeight: '1.5rem' }}>
-              {shouldHighlight ? (
-                <span className="bg-yellow-300 text-black px-0.5 rounded">{line || '\u00A0'}</span>
+              {hasChange ? (
+                <span className="text-gray-700">
+                  {line.split('').map((char, charIndex) => {
+                    // Check if this position starts a changed value
+                    let isHighlighted = false;
+                    for (const value of changedValues) {
+                      if (line.substring(charIndex, charIndex + value.length) === value) {
+                        isHighlighted = true;
+                        break;
+                      }
+                    }
+                    
+                    if (isHighlighted) {
+                      // Find which value matches
+                      for (const value of changedValues) {
+                        if (line.substring(charIndex, charIndex + value.length) === value) {
+                          // Return the entire value as highlighted
+                          return (
+                            <span key={charIndex} className="bg-yellow-300 text-black px-0.5 rounded">
+                              {value}
+                            </span>
+                          );
+                        }
+                      }
+                    }
+                    
+                    // Check if this char is part of an already rendered highlight
+                    let skipChar = false;
+                    for (const value of changedValues) {
+                      for (let i = 1; i < value.length; i++) {
+                        if (line.substring(charIndex - i, charIndex - i + value.length) === value) {
+                          skipChar = true;
+                          break;
+                        }
+                      }
+                      if (skipChar) break;
+                    }
+                    
+                    if (skipChar) return null;
+                    return <span key={charIndex}>{char}</span>;
+                  })}
+                </span>
               ) : (
                 <span className="text-gray-700">{line || '\u00A0'}</span>
               )}
